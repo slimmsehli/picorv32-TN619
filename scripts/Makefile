@@ -3,12 +3,12 @@
 #
 #  Requirements:
 #    - riscv32-unknown-elf-gcc  (RISC-V toolchain)
-#    - verilator                (Verilator simulator)
+#    - iverilog + vvp           (Icarus Verilog simulator)
 #    - gtkwave                  (optional, for waveforms)
 #
 #  Install toolchain (Ubuntu/Debian):
 #    sudo apt install gcc-riscv64-unknown-elf
-#    sudo apt install verilator gtkwave
+#    sudo apt install iverilog gtkwave
 #
 #  Usage:
 #    make          — build firmware + run simulation
@@ -21,24 +21,24 @@
 CC      = riscv32-unknown-elf-gcc
 OBJCOPY = riscv32-unknown-elf-objcopy
 OBJDUMP = riscv32-unknown-elf-objdump
+
 CFLAGS  = -march=rv32i -mabi=ilp32 -nostdlib -O1 -Wall
+
 SRCS     = ./firmware/crt0.S ./firmware/main.c
 LDSCRIPT = ./firmware/link.ld
 ELF      = ./firmware/firmware.elf
 HEX_RAW  = ./firmware/firmware_raw.hex   # objcopy byte-addressed output
 HEX      = ./firmware/firmware.hex        # word-addressed for $readmemh
-CORE     = ./rtl/picorv32.v
-VTB      = ./tb/tb_picorv32.v        # thin Verilog shim for Verilator
-SIMDIR   = ./simulation
-SIMBIN   = simv                  # compiled simulation binary
-VCD      = $(SIMDIR)/waves.vcd
+
+TB      = ./tb/tb_picorv32.v
+CORE    = ./rtl/picorv32.v
+SIMOUT  = ./simulation/sim.vvp
+VCD     = ./simulation/waves.vcd
 HEX_CONV = ./scripts/hex_convert.py
 
 .PHONY: all firmware sim wave disasm clean
 
 all: firmware sim
-
-# --- Firmware -----------------------------------------------------------
 
 firmware: $(HEX)
 
@@ -51,22 +51,11 @@ $(HEX_RAW): $(ELF)
 $(HEX): $(HEX_RAW)
 	python3 $(HEX_CONV) $(HEX_RAW) $(HEX)
 
-# --- Verilator simulation -----------------------------------------------
-#
-#  Verilator compiles RTL + a C++ testbench into a native binary.
-#  Two-step process:
-#    1. verilator  → generates C++ model in obj_dir/
-#    2. make       → compiles that model + your C++ TB into $(SIMBIN)
+$(SIMOUT): $(TB) $(CORE)
+	iverilog -g2012 -o $(SIMOUT) $(TB) $(CORE)
 
-comp:
-	verilator --binary -j 0 --trace -Wall \
-	$(VTB) $(CORE) \
-	--top tb_picorv32  +define+old --Mdir $(SIMDIR) -o $(SIMBIN) \
-	-Wno-UNDRIVEN -Wno-UNUSEDSIGNAL -Wno-WIDTHEXPAND -Wno-IMPLICIT -Wno-PINCONNECTEMPTY -Wno-DECLFILENAME -Wno-BLKSEQ \
-	-Wno-UNUSEDPARAM -Wno-WIDTHTRUNC -Wno-VARHIDDEN -Wno-REDEFMACRO -Wno-PINMISSING -Wno-GENUNNAMED 
-
-run:
-	./simulation/simv +MEM_FILE=$(HEX) +VCD_FILE=$(VCD)
+sim: $(SIMOUT) $(HEX)
+	vvp $(SIMOUT) +MEM_FILE=$(HEX)
 
 wave: $(VCD)
 	gtkwave $(VCD) &
@@ -75,9 +64,6 @@ disasm: $(ELF)
 	$(OBJDUMP) -d $(ELF)
 
 clean:
-	rm -f  $(SIMBIN) $(VCD)
-	rm -rf $(SIMDIR)/obj_dir
-	rm -f  ./firmware/*.hex ./firmware/*.elf
-	rm -f waves.vcd
-
-
+	rm -f ./simulation/* ./firmware/*.hex ./firmware/*.elf 
+	
+	
