@@ -6,7 +6,7 @@ module tb_soc;
 
     parameter MEM_WORDS  = 32768;        // 128KB
     parameter CLK_PERIOD = 10;           // 100MHz
-    parameter MAX_CYCLES = 50_000_000;
+    parameter MAX_CYCLES = 500_000_000;
 
     // -------------------------------------------------------------------------
     // File paths via plusargs — use a task to trim null padding from reg string
@@ -208,18 +208,21 @@ module tb_soc;
         case (uart_state)
             0: if (uart_tx_pin == 0) begin
                    uart_state <= 1;
-                   uart_cnt   <= 434;
-                   uart_bit   <= 0;
-                   uart_byte  <= 0;
+                   uart_cnt   <= 434;  // Wait half a bit period (middle of Start Bit)
                end
             1: if (uart_cnt == 0) begin
+                   uart_state <= 2;
+                   uart_cnt   <= 867;  // Wait a full bit period (middle of Data Bit 0)
+                   uart_bit   <= 0;
+               end else uart_cnt <= uart_cnt - 1;
+            2: if (uart_cnt == 0) begin
                    uart_cnt <= 867;
                    if (uart_bit < 8) begin
                        uart_byte <= {uart_tx_pin, uart_byte[7:1]};
                        uart_bit  <= uart_bit + 1;
                    end else begin
                        $write("%c", uart_byte);
-                       uart_state <= 0;
+                       uart_state <= 0; // Wait for next start bit
                    end
                end else uart_cnt <= uart_cnt - 1;
         endcase
@@ -230,7 +233,7 @@ module tb_soc;
     // Memory transaction monitor — prints every access, helps debug traps
     // Disable by setting VERBOSE=0
     // -------------------------------------------------------------------------
-    parameter VERBOSE = 1;
+    parameter VERBOSE = 0;
 
     always @(posedge clk) begin
         if (VERBOSE && resetn && mem_valid && mem_ready) begin

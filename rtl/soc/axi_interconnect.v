@@ -79,7 +79,7 @@ module axi_interconnect (
     // bram_en: high during S_BRAM_LATCH (write) or whenever we need write strobe
     // For reads: bram_rdata is combinatorial so just present addr in S_BRAM_LATCH
     // For writes: also fire in S_IDLE on the same cycle we issue mem_ready
-    assign bram_en    = mem_valid && sel_bram &&
+    assign bram_en    = mem_valid && !mem_ready && sel_bram &&
                         ((state == S_IDLE && is_write) || state == S_BRAM_LATCH);
     assign bram_we    = is_write ? mem_wstrb : 4'b0;
     assign bram_addr  = mem_addr[16:2];
@@ -101,7 +101,7 @@ module axi_interconnect (
             case (state)
 
                 S_IDLE: begin
-                    if (mem_valid) begin
+                    if (mem_valid && !mem_ready) begin
                         if (sel_bram) begin
                             if (is_write) begin
                                 // bram_en fires combinatorially this cycle
