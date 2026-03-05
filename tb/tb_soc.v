@@ -1,25 +1,44 @@
 `timescale 1ns/1ps
 // =============================================================================
 //  tb_soc.v  —  Full SoC Testbench
-//  PicoRV32 + UART AXI + PWM Timer AXI + BRAM
 // =============================================================================
 module tb_soc;
 
-    // -------------------------------------------------------------------------
-    // Parameters (overridable via +define or plusargs)
-    // -------------------------------------------------------------------------
-    parameter MEM_WORDS  = 32768;
-    parameter CLK_PERIOD = 10;           // 10ns = 100MHz
+    parameter MEM_WORDS  = 32768;        // 128KB
+    parameter CLK_PERIOD = 10;           // 100MHz
     parameter MAX_CYCLES = 50_000_000;
 
-    // Plusarg overrides
-    reg [255:0] mem_file_arg;
-    reg [255:0] vcd_file_arg;
+    // -------------------------------------------------------------------------
+    // File paths via plusargs — use a task to trim null padding from reg string
+    // -------------------------------------------------------------------------
+    reg [512*8-1:0] mem_file_padded;
+    reg [512*8-1:0] vcd_file_padded;
+    reg [255:0]     mem_file;
+    reg [255:0]     vcd_file;
+
+    // Strip trailing null bytes from a 512-byte padded string into 32-byte reg
+    task trim_path;
+        input  [512*8-1:0] padded;
+        output [255:0]     trimmed;
+        integer i;
+        reg [7:0] ch;
+        begin
+            trimmed = 0;
+            for (i = 0; i < 32; i = i + 1) begin
+                ch = padded[((512-1-i)*8) +: 8];
+                if (ch != 8'h00)
+                    trimmed[((31-i)*8) +: 8] = ch;
+            end
+        end
+    endtask
+
     initial begin
-        if (!$value$plusargs("MEM_FILE=%s", mem_file_arg))
-            mem_file_arg = "firmware.hex";
-        if (!$value$plusargs("VCD_FILE=%s", vcd_file_arg))
-            vcd_file_arg = "waves.vcd";
+        if (!$value$plusargs("MEM_FILE=%s", mem_file_padded))
+            mem_file_padded = "firmware.hex";
+        if (!$value$plusargs("VCD_FILE=%s", vcd_file_padded))
+            vcd_file_padded = "waves.vcd";
+        mem_file = mem_file_padded[255:0];
+        vcd_file = vcd_file_padded[255:0];
     end
 
     // -------------------------------------------------------------------------
@@ -41,30 +60,34 @@ module tb_soc;
     wire        mem_ready;
 
     // -------------------------------------------------------------------------
-    // BRAM
+    // BRAM — combinatorial enable/address, registered read data
     // -------------------------------------------------------------------------
     reg  [31:0] bram [0:MEM_WORDS-1];
     wire        bram_en;
     wire [ 3:0] bram_we;
-    wire [16:0] bram_addr_w;
+    wire [14:0] bram_addr_w;
     wire [31:0] bram_wdata_w;
-    reg  [31:0] bram_rdata;
 
+    // bram_rdata is COMBINATORIAL — no register, no race conditions
+    // The interconnect reads it directly in S_BRAM_LATCH
+    wire [31:0] bram_rdata = bram[bram_addr_w];
+
+    // Writes are registered (posedge clk, gated on bram_en && bram_we)
     always @(posedge clk) begin
-        if (bram_en) begin
+        if (bram_en && |bram_we) begin
             if (bram_we[0]) bram[bram_addr_w][ 7: 0] <= bram_wdata_w[ 7: 0];
             if (bram_we[1]) bram[bram_addr_w][15: 8] <= bram_wdata_w[15: 8];
             if (bram_we[2]) bram[bram_addr_w][23:16] <= bram_wdata_w[23:16];
             if (bram_we[3]) bram[bram_addr_w][31:24] <= bram_wdata_w[31:24];
-            bram_rdata <= bram[bram_addr_w];
         end
     end
 
     initial begin
         integer i;
         for (i = 0; i < MEM_WORDS; i = i+1) bram[i] = 32'h0000_0013;
-        $readmemh(mem_file_arg, bram);
-        $display("[TB] Loaded firmware from: %s", mem_file_arg);
+        #1; // let plusarg initial block settle first
+        $readmemh(mem_file, bram);
+        $display("[TB] Loaded firmware from: %s", mem_file);
     end
 
     // -------------------------------------------------------------------------
@@ -78,7 +101,7 @@ module tb_soc;
     wire [31:0] u_rdata;  wire [1:0] u_rresp;
     wire        u_rvalid; wire u_rready;
     wire        uart_tx_pin;
-    wire        uart_rx_pin = uart_tx_pin;   // loopback
+    wire        uart_rx_pin = uart_tx_pin;   // TX loopback to RX
 
     // -------------------------------------------------------------------------
     // AXI wires: PWM
@@ -94,18 +117,18 @@ module tb_soc;
     wire        pwm_irq;
 
     // -------------------------------------------------------------------------
-    // PicoRV32
+    // PicoRV32 — STACKADDR must be top of BRAM (128KB = 0x20000)
     // -------------------------------------------------------------------------
     picorv32 #(
-        .ENABLE_COUNTERS    (1),
-        .ENABLE_REGS_16_31  (1),
+        .ENABLE_COUNTERS     (1),
+        .ENABLE_REGS_16_31   (1),
         .ENABLE_REGS_DUALPORT(1),
-        .COMPRESSED_ISA     (0),
-        .ENABLE_MUL         (0),
-        .ENABLE_DIV         (0),
-        .ENABLE_IRQ         (0),
-        .PROGADDR_RESET     (32'h0000_0000),
-        .STACKADDR          (32'h0002_0000)
+        .COMPRESSED_ISA      (0),
+        .ENABLE_MUL          (0),
+        .ENABLE_DIV          (0),
+        .ENABLE_IRQ          (0),
+        .PROGADDR_RESET      (32'h0000_0000),
+        .STACKADDR           (32'h0001_FFFC)  // last valid word in 128KB BRAM
     ) cpu (
         .clk(clk), .resetn(resetn), .trap(trap),
         .mem_valid(mem_valid), .mem_instr(mem_instr),
@@ -121,7 +144,7 @@ module tb_soc;
     // -------------------------------------------------------------------------
     // Interconnect
     // -------------------------------------------------------------------------
-    axi_intercon intercon (
+    axi_interconnect intercon (
         .clk(clk), .resetn(resetn),
         .mem_valid(mem_valid), .mem_ready(mem_ready),
         .mem_instr(mem_instr), .mem_addr(mem_addr),
@@ -177,7 +200,7 @@ module tb_soc;
     );
 
     // -------------------------------------------------------------------------
-    // UART TX monitor — decode serial bits and print to console
+    // UART TX monitor — decode serial and print to console
     // -------------------------------------------------------------------------
     integer uart_state = 0, uart_cnt = 0, uart_bit = 0;
     reg [7:0] uart_byte = 0;
@@ -185,7 +208,7 @@ module tb_soc;
         case (uart_state)
             0: if (uart_tx_pin == 0) begin
                    uart_state <= 1;
-                   uart_cnt   <= 434;   // half-bit @ 100MHz/115200
+                   uart_cnt   <= 434;
                    uart_bit   <= 0;
                    uart_byte  <= 0;
                end
@@ -202,8 +225,35 @@ module tb_soc;
         endcase
     end
 
+
     // -------------------------------------------------------------------------
-    // PASS/FAIL intercept at 0x9000_0000
+    // Memory transaction monitor — prints every access, helps debug traps
+    // Disable by setting VERBOSE=0
+    // -------------------------------------------------------------------------
+    parameter VERBOSE = 1;
+
+    always @(posedge clk) begin
+        if (VERBOSE && resetn && mem_valid && mem_ready) begin
+            if (mem_wstrb != 4'h0)
+                $display("[MEM] WR  addr=0x%08X data=0x%08X strb=%04b  cycle=%0d",
+                         mem_addr, mem_wdata, mem_wstrb, cycles);
+            else
+                $display("[MEM] RD  addr=0x%08X data=0x%08X instr=%0b  cycle=%0d",
+                         mem_addr, mem_rdata, mem_instr, cycles);
+        end
+    end
+
+    // Warn on unmapped access (DEADBEEF response)
+    always @(posedge clk) begin
+        if (resetn && mem_valid && mem_ready && !mem_wstrb &&
+            mem_rdata === 32'hDEAD_BEEF) begin
+            $display("[TB] WARNING: unmapped READ  addr=0x%08X  cycle=%0d",
+                     mem_addr, cycles);
+        end
+    end
+
+    // -------------------------------------------------------------------------
+    // PASS/FAIL intercept — address 0x9000_0000
     // -------------------------------------------------------------------------
     reg test_done = 0;
     always @(posedge clk) begin
@@ -213,12 +263,12 @@ module tb_soc;
             if (mem_wdata == 0)
                 $display("\n[TB] *** ALL TESTS PASSED ***");
             else
-                $display("\n[TB] *** FAILED: %0d test(s) failed ***", mem_wdata);
+                $display("\n[TB] *** FAILED: %0d test(s) ***", mem_wdata);
         end
     end
 
     // -------------------------------------------------------------------------
-    // Cycle counter + watchdog + trap
+    // Watchdog + trap + finish
     // -------------------------------------------------------------------------
     integer cycles = 0;
     always @(posedge clk) begin
@@ -228,7 +278,9 @@ module tb_soc;
             $finish;
         end
         if (resetn && trap) begin
-            $display("[TB] TRAP at cycle %0d  pc=0x%08X", cycles, cpu.reg_pc);
+            $display("[TB] TRAP at cycle %0d  pc=0x%08X  sp=0x%08X",
+                     cycles, cpu.reg_pc, cpu.cpuregs[2]);
+            $display("[TB] Check: stack overflow? wrong STACKADDR? unmapped address?");
             #(CLK_PERIOD*5); $finish;
         end
         if (test_done) begin
@@ -238,14 +290,16 @@ module tb_soc;
     end
 
     // -------------------------------------------------------------------------
-    // VCD dump
+    // VCD
     // -------------------------------------------------------------------------
     initial begin
-        $dumpfile(vcd_file_arg);
+        #1;   // let plusarg initial blocks settle
+        $dumpfile(vcd_file);
         $dumpvars(0, tb_soc);
         $display("=================================================");
-        $display("  PicoRV32 SoC Testbench");
-        $display("  UART + PWM/Timer @ 100MHz");
+        $display("  PicoRV32 SoC Testbench  UART+PWM @ 100MHz");
+        $display("  Firmware : %s", mem_file);
+        $display("  Stack top: 0x0001FFF0");
         $display("=================================================");
     end
 

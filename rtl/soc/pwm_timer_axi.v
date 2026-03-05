@@ -106,16 +106,17 @@ module pwm_timer_axi (
             ch_cmp[2]     <= 0;
             ch_cmp[3]     <= 0;
         end else begin
-            if (s_axi_awvalid && !s_axi_awready) begin
+            // Accept AW+W simultaneously - no timing gap
+            s_axi_awready <= 0;
+            s_axi_wready  <= 0;
+            if (s_axi_awvalid && s_axi_wvalid && !s_axi_bvalid) begin
                 s_axi_awready <= 1;
+                s_axi_wready  <= 1;
                 wr_addr       <= s_axi_awaddr[6:2];
-            end else begin
-                s_axi_awready <= 0;
             end
 
-            if (s_axi_wvalid && !s_axi_wready) begin
-                s_axi_wready <= 1;
-                case (wr_addr)
+            if (s_axi_awvalid && s_axi_wvalid && !s_axi_bvalid) begin
+                case (s_axi_awaddr[6:2])
                     5'h00: begin  // CTRL
                         if (s_axi_wstrb[0]) begin
                             timer_en    <= s_axi_wdata[0];
@@ -168,17 +169,15 @@ module pwm_timer_axi (
                     end
                     default: ;
                 endcase
-            end else begin
-                s_axi_wready <= 0;
-            end
 
-            if (s_axi_wready && !s_axi_bvalid) begin
+            if (s_axi_awvalid && s_axi_wvalid && !s_axi_bvalid) begin
                 s_axi_bvalid <= 1;
                 s_axi_bresp  <= 2'b00;
             end else if (s_axi_bvalid && s_axi_bready) begin
                 s_axi_bvalid <= 0;
             end
         end
+    end
     end
 
     // -------------------------------------------------------------------------
