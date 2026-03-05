@@ -22,13 +22,13 @@ CC      = riscv32-unknown-elf-gcc
 OBJCOPY = riscv32-unknown-elf-objcopy
 OBJDUMP = riscv32-unknown-elf-objdump
 CFLAGS  = -march=rv32i -mabi=ilp32 -nostdlib -O1 -Wall
-SRCS     = ./firmware/soc/crt0.S ./firmware/soc/main.c
-LDSCRIPT = ./firmware/soc/link.ld
-ELF      = ./firmware/soc/firmware.elf
-HEX_RAW  = ./firmware/soc/firmware_raw.hex   # objcopy byte-addressed output
-HEX      = ./firmware/soc/firmware.hex        # word-addressed for $readmemh
-CORE     = ./rtl/core/picorv32.v ./rtl/soc/axi_interconnect.v  ./rtl/soc/pwm_timer_axi.v  ./rtl/soc/uart_axi.v
-VTB      = ./tb/tb_soc.v        # thin Verilog shim for Verilator
+SRCS     = ./firmware/core/crt0.S ./firmware/core/main.c
+LDSCRIPT = ./firmware/core/link.ld
+ELF      = ./firmware/core/firmware.elf
+HEX_RAW  = ./firmware/core/firmware_raw.hex   # objcopy byte-addressed output
+HEX      = ./firmware/core/firmware.hex        # word-addressed for $readmemh
+CORE     = ./rtl/core/picorv32.v
+VTB      = ./tb/tb_picorv32.v        # thin Verilog shim for Verilator
 SIMDIR   = ./simulation
 SIMBIN   = simv                  # compiled simulation binary
 VCD      = $(SIMDIR)/waves.vcd
@@ -61,9 +61,9 @@ $(HEX): $(HEX_RAW)
 comp:
 	verilator --binary -j 0 --trace -Wall \
 	$(VTB) $(CORE) \
-	--top tb_soc  +define+old --Mdir $(SIMDIR) -o $(SIMBIN) \
+	--top tb_picorv32  +define+old --Mdir $(SIMDIR) -o $(SIMBIN) \
 	-Wno-UNDRIVEN -Wno-UNUSEDSIGNAL -Wno-WIDTHEXPAND -Wno-IMPLICIT -Wno-PINCONNECTEMPTY -Wno-DECLFILENAME -Wno-BLKSEQ \
-	-Wno-UNUSEDPARAM -Wno-WIDTHTRUNC -Wno-VARHIDDEN -Wno-REDEFMACRO -Wno-PINMISSING -Wno-GENUNNAMED -Wno-CASEINCOMPLETE
+	-Wno-UNUSEDPARAM -Wno-WIDTHTRUNC -Wno-VARHIDDEN -Wno-REDEFMACRO -Wno-PINMISSING -Wno-GENUNNAMED 
 
 run:
 	./simulation/simv +MEM_FILE=$(HEX) +VCD_FILE=$(VCD)
@@ -77,8 +77,7 @@ disasm: $(ELF)
 clean:
 	rm -f  $(SIMBIN) $(VCD)
 	rm -rf $(SIMDIR)/*
+	rm -f  ./firmware/*.hex ./firmware/*.elf
 	rm -f waves.vcd
-	rm -rf firmware/core/*.hex firmware/core/*.elf
-	rm -rf firmware/soc/*.hex firmware/soc/*.elf
 
 
