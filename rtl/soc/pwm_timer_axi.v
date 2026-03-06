@@ -85,6 +85,16 @@ module pwm_timer_axi (
     assign irq = (overflow & ov_irq_en);
 
     // -------------------------------------------------------------------------
+    // Single-driver handshake pulses
+    //   ov_clr_req     -- pulsed by AXI write block, consumed by timer block
+    //   timer_stop_req -- NOT needed; timer_en is sole-driven by AXI write block
+    //                     (one-shot stop moved here from timer block)
+    // Rule: overflow  driven ONLY by timer block
+    //       timer_en  driven ONLY by AXI write block
+    // -------------------------------------------------------------------------
+    reg ov_clr_req;   // 1-cycle pulse: request overflow flag clear
+
+    // -------------------------------------------------------------------------
     // AXI4-Lite Write
     // -------------------------------------------------------------------------
     reg [4:0] wr_addr;
@@ -105,17 +115,21 @@ module pwm_timer_axi (
             ch_cmp[1]     <= 0;
             ch_cmp[2]     <= 0;
             ch_cmp[3]     <= 0;
+            ov_clr_req    <= 0;
         end else begin
-            // Accept AW+W simultaneously - no timing gap
+            // Default: deassert pulse every cycle
+            ov_clr_req    <= 0;
+
             s_axi_awready <= 0;
             s_axi_wready  <= 0;
+
             if (s_axi_awvalid && s_axi_wvalid && !s_axi_bvalid) begin
                 s_axi_awready <= 1;
                 s_axi_wready  <= 1;
+                s_axi_bvalid  <= 1;
+                s_axi_bresp   <= 2'b00;
                 wr_addr       <= s_axi_awaddr[6:2];
-            end
 
-            if (s_axi_awvalid && s_axi_wvalid && !s_axi_bvalid) begin
                 case (s_axi_awaddr[6:2])
                     5'h00: begin  // CTRL
                         if (s_axi_wstrb[0]) begin
@@ -125,13 +139,14 @@ module pwm_timer_axi (
                             ov_irq_en   <= s_axi_wdata[3];
                         end
                     end
-                    5'h01: begin  // STATUS — write 1 to clear bits
+                    5'h01: begin  // STATUS: write-1-to-clear
                         if (s_axi_wstrb[0]) begin
-                            if (s_axi_wdata[0])   overflow <= 0;
+                            // Signal timer block to clear overflow (single driver rule)
+                            if (s_axi_wdata[0])   ov_clr_req <= 1;
                             if (s_axi_wdata[4:1]) ch_match <= ch_match & ~s_axi_wdata[4:1];
                         end
                     end
-                    5'h02: begin  // COUNTER — preload value
+                    5'h02: begin  // COUNTER
                         if (s_axi_wstrb[0]) counter[ 7: 0] <= s_axi_wdata[ 7: 0];
                         if (s_axi_wstrb[1]) counter[15: 8] <= s_axi_wdata[15: 8];
                         if (s_axi_wstrb[2]) counter[23:16] <= s_axi_wdata[23:16];
@@ -169,15 +184,11 @@ module pwm_timer_axi (
                     end
                     default: ;
                 endcase
-
-            if (s_axi_awvalid && s_axi_wvalid && !s_axi_bvalid) begin
-                s_axi_bvalid <= 1;
-                s_axi_bresp  <= 2'b00;
-            end else if (s_axi_bvalid && s_axi_bready) begin
-                s_axi_bvalid <= 0;
             end
+
+            if (s_axi_bvalid && s_axi_bready)
+                s_axi_bvalid <= 0;
         end
-    end
     end
 
     // -------------------------------------------------------------------------
@@ -215,6 +226,10 @@ module pwm_timer_axi (
 
     // -------------------------------------------------------------------------
     // Timer Counter & PWM Logic
+    //
+    // overflow driven ONLY here (sole driver).
+    // ov_clr_req is a 1-cycle pulse owned solely by the AXI write block.
+    // timer_en  driven ONLY by the AXI write block.
     // -------------------------------------------------------------------------
     integer i;
     always @(posedge s_axi_aclk) begin
@@ -223,12 +238,16 @@ module pwm_timer_axi (
             ch_match  <= 0;
             pwm_out   <= 4'b0000;
         end else if (timer_en) begin
-            // Increment counter
-            if (counter >= period) begin
-                counter  <= 0;
-                overflow <= 1;
-                if (!auto_reload)
-                    timer_en <= 0;  // one-shot: stop after period
+            // Overflow W1C: clear takes priority over set
+            if (ov_clr_req) begin
+                overflow <= 0;
+            end
+
+            // Counter rolls over after exactly `period` ticks (0 .. period-1)
+            if (counter >= period - 1) begin
+                counter <= 0;
+                if (!ov_clr_req)  // don't immediately re-set after a clear
+                    overflow <= 1;
             end else begin
                 counter <= counter + 1;
             end

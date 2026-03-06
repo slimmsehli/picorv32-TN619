@@ -87,12 +87,51 @@ static void test_uart_tx(void) {
 }
 
 // ----------------------------------------------------------------------------
+// uart_rx_drain — flush all looped-back bytes still in flight
+//
+//   Problem: the testbench wires uart_tx → uart_rx, so every byte printed
+//   before this test (banner strings, "[1] UART TX" output, etc.) gets
+//   looped back into the RX buffer.  There is no FIFO, so the buffer
+//   overflows and rx_data ends up holding the last received byte ('\n' = 0x0A).
+//
+//   A simple "while rx_ready: read" is not enough because the stop bit of the
+//   last looped-back character arrives ~434 cycles *after* TX_BUSY goes low,
+//   so rx_ready hasn't been raised yet when we check.
+//
+//   Fix: wait for TX idle, then spin until the line has been quiet for more
+//   than one full byte period (10 * 868 = 8680 cycles at 115200 baud).
+//   "Quiet" means no new byte arrived during that window.
+// ----------------------------------------------------------------------------
+static void uart_rx_drain(void) {
+    // 1. Let the transmitter finish completely.
+    while (UART_STATUS & UART_TX_BUSY);
+
+    // 2. Drain: keep reading while bytes arrive; reset the gap counter each
+    //    time a new byte shows up.  Exit only after > 1 full byte-time of
+    //    silence (10 bits * 868 cycles/bit = 8680 cycles; 10000 is safe).
+    volatile int quiet = 0;
+    while (quiet < 10000) {
+        if (uart_rx_ready()) {
+            volatile uint32_t dummy = UART_RXDATA;  /* consume byte */
+            (void)dummy;
+            quiet = 0;   /* reset gap counter */
+        } else {
+            quiet++;
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Test 2: UART RX loopback
 //   In the testbench, uart_tx is wired back to uart_rx.
 //   We send bytes and expect to receive them back.
 // ----------------------------------------------------------------------------
 static void test_uart_rx_loopback(void) {
     uart_puts("\r\n[2] UART RX Loopback\r\n");
+
+    // Drain any bytes that were looped back from the banner / test-1 prints.
+    // Must be called BEFORE sending the first test byte.
+    uart_rx_drain();
 
     // The testbench wires TX → RX, so bytes we send come back
     uint8_t test_bytes[4] = {0x55, 0xAA, 0x42, 0xFF};

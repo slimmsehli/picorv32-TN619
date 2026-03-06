@@ -46,7 +46,7 @@ module uart_axi #(
     output reg         s_axi_rvalid,
     input  wire        s_axi_rready,
 
-    output reg         uart_tx,
+    output reg         uart_tx = 1'b1,
     input  wire        uart_rx
 );
     localparam integer DEFAULT_DIV = CLK_FREQ / BAUD_RATE;

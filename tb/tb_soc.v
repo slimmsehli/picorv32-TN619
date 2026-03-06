@@ -305,5 +305,9 @@ module tb_soc;
         $display("  Stack top: 0x0001FFF0");
         $display("=================================================");
     end
+    
+    //
+    //always #10ms $display("[TB] Simulation Time %d", $time);
+    //
 
 endmodule

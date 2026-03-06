@@ -60,6 +60,14 @@ module axi_interconnect (
     wire sel_uart = (mem_addr[31:8]  == 24'h40_0000);
     wire sel_pwm  = (mem_addr[31:8]  == 24'h40_0100);
     wire is_write = (mem_wstrb != 4'b0);
+    
+    // expanded address decode
+		wire sel_i2c  = (mem_addr[31:8]  == 24'h40_0200);
+		wire sel_spi  = (mem_addr[31:8]  == 24'h40_0300);
+		wire sel_can  = (mem_addr[31:8]  == 24'h40_0400);
+		wire sel_adc  = (mem_addr[31:8]  == 24'h40_0500);
+		wire sel_dac  = (mem_addr[31:8]  == 24'h40_0600);
+		wire sel_gpio = (mem_addr[31:8]  == 24'h40_0700);
 
     // -------------------------------------------------------------------------
     // BRAM signals — all combinatorial

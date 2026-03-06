@@ -36,14 +36,14 @@ HEX_CONV = ./scripts/hex_convert.py
 
 .PHONY: all firmware sim wave disasm clean
 
-all: firmware sim
+all: clean firmware comp run
 
 # --- Firmware -----------------------------------------------------------
 
 firmware: $(HEX)
 
 $(ELF): $(SRCS) $(LDSCRIPT)
-	$(CC) $(CFLAGS) -T $(LDSCRIPT) $(SRCS) -o $(ELF)
+	$(CC) $(CFLAGS) -T $(LDSCRIPT) $(SRCS) -o $(ELF) -g
 
 $(HEX_RAW): $(ELF)
 	$(OBJCOPY) -O verilog $(ELF) $(HEX_RAW)
@@ -81,4 +81,9 @@ clean:
 	rm -rf firmware/core/*.hex firmware/core/*.elf
 	rm -rf firmware/soc/*.hex firmware/soc/*.elf
 
+
+genfiles:
+	rm -rf files
+	mkdir files
+	cp -r firmware/soc/* tb/tb_soc.v rtl/soc/* Makefile scripts/hex_convert.py files/
 

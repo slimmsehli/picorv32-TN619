@@ -1,5 +1,6 @@
 org_files/*
 simulation/*
 toolchain
-firmware/*.elf
-firmware/*.hex
+firmware/soc/*.elf
+firmware/core/*.elf
+files
