@@ -237,33 +237,36 @@ module pwm_timer_axi (
             overflow  <= 0;
             ch_match  <= 0;
             pwm_out   <= 4'b0000;
-        end else if (timer_en) begin
-            // Overflow W1C: clear takes priority over set
-            if (ov_clr_req) begin
+        end else begin
+            // ov_clr_req (W1C from AXI write) is handled UNCONDITIONALLY,
+            // regardless of timer_en, so a write to clear overflow always works.
+            if (ov_clr_req)
                 overflow <= 0;
-            end
 
-            // Counter rolls over after exactly `period` ticks (0 .. period-1)
-            if (counter >= period - 1) begin
-                counter <= 0;
-                if (!ov_clr_req)  // don't immediately re-set after a clear
-                    overflow <= 1;
-            end else begin
-                counter <= counter + 1;
-            end
-
-            // PWM output: high while counter < compare value
-            for (i = 0; i < 4; i = i + 1) begin
-                if (pwm_en) begin
-                    pwm_out[i] <= (counter < ch_cmp[i]) ? 1'b1 : 1'b0;
-                    // Detect rising edge of compare match
-                    if (counter == ch_cmp[i])
-                        ch_match[i] <= 1;
+            if (timer_en) begin
+                // Counter rolls over after exactly `period` ticks (0 .. period-1)
+                // Clear takes priority: if ov_clr_req fires on the same cycle as
+                // rollover, the clear wins and overflow is NOT re-set.
+                if (counter >= period - 1) begin
+                    counter <= 0;
+                    if (!ov_clr_req)
+                        overflow <= 1;
                 end else begin
-                    pwm_out[i] <= 0;
+                    counter <= counter + 1;
                 end
-            end
-        end
-    end
+
+                // PWM output: high while counter < compare value
+                for (i = 0; i < 4; i = i + 1) begin
+                    if (pwm_en) begin
+                        pwm_out[i] <= (counter < ch_cmp[i]) ? 1'b1 : 1'b0;
+                        if (counter == ch_cmp[i])
+                            ch_match[i] <= 1;
+                    end else begin
+                        pwm_out[i] <= 0;
+                    end
+                end
+            end  // if (timer_en)
+        end  // else (not reset)
+    end  // always
 
 endmodule

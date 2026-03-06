@@ -196,7 +196,8 @@ module uart_axi #(
                         end else begin
                             rx_busy <= 0;
                             if (rx_sync[1]) begin
-                                if (rx_ready) rx_overflow <= 1;
+                                //if (rx_ready) rx_overflow <= 1; //fix
+                                if (rx_ready && !rx_rd_pulse) rx_overflow <= 1; //fix
                                 rx_ready <= 1;
                             end else frame_err <= 1;
                         end
