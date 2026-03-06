@@ -4,3 +4,4 @@ toolchain
 firmware/soc/*.elf
 firmware/core/*.elf
 files
+venv
