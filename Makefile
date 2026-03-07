@@ -22,7 +22,7 @@ CC      = riscv32-unknown-elf-gcc
 OBJCOPY = riscv32-unknown-elf-objcopy
 OBJDUMP = riscv32-unknown-elf-objdump
 CFLAGS  = -march=rv32i -mabi=ilp32 -nostdlib -O1 -Wall
-SRCS     = ./firmware/soc/crt0.S ./firmware/soc/iomux.c
+SRCS     = ./firmware/soc/crt0.S ./firmware/soc/pwm_gpio.c
 LDSCRIPT = ./firmware/soc/link.ld
 ELF      = ./firmware/soc/firmware.elf
 HEX_RAW  = ./firmware/soc/firmware_raw.hex   # objcopy byte-addressed output

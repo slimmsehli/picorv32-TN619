@@ -38,8 +38,8 @@ module tb_soc;
     localparam UART_FULL = 868;
 
     // Pad numbers matching the firmware routing
-    localparam TX_PAD = 1;   // UART0_TX → GPIO1
-    localparam RX_PAD = 2;   // UART0_RX → GPIO2
+    localparam TX_PAD = 0;   // UART0_TX → GPIO0
+    localparam RX_PAD = 1;   // UART0_RX → GPIO1
 
     // =========================================================================
     // Firmware / VCD paths
