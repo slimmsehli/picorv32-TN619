@@ -186,17 +186,16 @@ module iomux_axi #(
                 s_axi_awready <= 1;
                 s_axi_wready  <= 1;
 
-                // IOMUX_GPIO[n] registers: offset 0x40 + n*4
-                if (s_axi_awaddr[9:8] == 2'b01) begin
-                    // offset 0x40..0x40+GPIO_COUNT*4
-                    // index = (addr - 0x40) / 4
+                // IOMUX_GPIO[n] registers: offset 0x40 + n*4  (0x040..0x07C)
+                // addr[7:6] == 2'b01 selects this range (bit 8 is NOT set)
+                if (s_axi_awaddr[7:6] == 2'b01) begin
                     begin : wr_mux
                         integer n;
-                        n = (s_axi_awaddr[7:2]);  // word index from bit 2
-                        // subtract 0x10 (0x40 >> 2 = 0x10)
-                        if ((n >= 8'h10) && (n < (8'h10 + GPIO_COUNT))) begin
+                        n = s_axi_awaddr[7:2];   // word index (0x10..0x1F)
+                        // subtract 0x10 (= 0x40>>2) to get GPIO index 0..15
+                        if ((n >= 6'h10) && (n < (6'h10 + GPIO_COUNT))) begin
                             if (s_axi_wstrb[0])
-                                mux_reg[n - 8'h10] <= s_axi_wdata[7:0];
+                                mux_reg[n - 6'h10] <= s_axi_wdata[7:0];
                         end
                     end
                 end
@@ -285,37 +284,97 @@ module iomux_axi #(
     //   For each GPIO pad, select pad_out and pad_oe based on mux_reg[n]
     // -------------------------------------------------------------------------
 
-    // Helper: which pad (if any) is an INPUT signal routed to?
-    // For input signals (UART_RX, SPI_MISO, CAN_RX, I2C, GPI)
-    // we sample gpi_sync[n] when that signal is connected.
+    // Route input signals back to peripherals using explicit priority chains.
+    // Functions referencing unpacked arrays are unreliable in Verilog-2001
+    // simulators — the assign sensitivity list does not track array elements
+    // accessed inside a function call.  Explicit ternary chains guarantee
+    // correct re-evaluation whenever any mux_reg or gpi_sync bit changes.
+    // Default = 1'b1 (idle high — correct for UART, safe for all others).
 
-    // Route input signals back to peripherals:
-    // Each input signal is OR-reduced over all pads assigned to it.
-    // (Only one pad should be assigned; OR is safe for single assignment.)
-    function automatic find_input_sig;
-        input [7:0] sig_id;
-        integer     k;
-        reg         found;
-        begin
-            found = 1'b1; // default high (UART idle = 1, SPI MISO = don't-care)
-            // scan all pads for the one assigned this signal
-            begin : scan
-                integer m;
-                for (m = 0; m < GPIO_COUNT; m = m + 1) begin
-                    if (mux_reg[m] == sig_id)
-                        found = gpi_sync[m];
-                end
-            end
-            find_input_sig = found;
-        end
-    endfunction
+    assign uart0_rx_o  = (mux_reg[ 0]==SIG_UART0_RX) ? gpi_sync[ 0] :
+                         (mux_reg[ 1]==SIG_UART0_RX) ? gpi_sync[ 1] :
+                         (mux_reg[ 2]==SIG_UART0_RX) ? gpi_sync[ 2] :
+                         (mux_reg[ 3]==SIG_UART0_RX) ? gpi_sync[ 3] :
+                         (mux_reg[ 4]==SIG_UART0_RX) ? gpi_sync[ 4] :
+                         (mux_reg[ 5]==SIG_UART0_RX) ? gpi_sync[ 5] :
+                         (mux_reg[ 6]==SIG_UART0_RX) ? gpi_sync[ 6] :
+                         (mux_reg[ 7]==SIG_UART0_RX) ? gpi_sync[ 7] :
+                         (mux_reg[ 8]==SIG_UART0_RX) ? gpi_sync[ 8] :
+                         (mux_reg[ 9]==SIG_UART0_RX) ? gpi_sync[ 9] :
+                         (mux_reg[10]==SIG_UART0_RX) ? gpi_sync[10] :
+                         (mux_reg[11]==SIG_UART0_RX) ? gpi_sync[11] :
+                         (mux_reg[12]==SIG_UART0_RX) ? gpi_sync[12] :
+                         (mux_reg[13]==SIG_UART0_RX) ? gpi_sync[13] :
+                         (mux_reg[14]==SIG_UART0_RX) ? gpi_sync[14] :
+                         (mux_reg[15]==SIG_UART0_RX) ? gpi_sync[15] : 1'b1;
 
-    // Route peripheral inputs — driven combinatorially from gpi_sync
-    assign uart0_rx_o  = find_input_sig(SIG_UART0_RX);
-    assign uart1_rx_o  = find_input_sig(SIG_UART1_RX);
-    assign spi0_miso_o = find_input_sig(SIG_SPI0_MISO);
-    assign spi1_miso_o = find_input_sig(SIG_SPI1_MISO);
-    assign can0_rx_o   = find_input_sig(SIG_CAN0_RX);
+    assign uart1_rx_o  = (mux_reg[ 0]==SIG_UART1_RX) ? gpi_sync[ 0] :
+                         (mux_reg[ 1]==SIG_UART1_RX) ? gpi_sync[ 1] :
+                         (mux_reg[ 2]==SIG_UART1_RX) ? gpi_sync[ 2] :
+                         (mux_reg[ 3]==SIG_UART1_RX) ? gpi_sync[ 3] :
+                         (mux_reg[ 4]==SIG_UART1_RX) ? gpi_sync[ 4] :
+                         (mux_reg[ 5]==SIG_UART1_RX) ? gpi_sync[ 5] :
+                         (mux_reg[ 6]==SIG_UART1_RX) ? gpi_sync[ 6] :
+                         (mux_reg[ 7]==SIG_UART1_RX) ? gpi_sync[ 7] :
+                         (mux_reg[ 8]==SIG_UART1_RX) ? gpi_sync[ 8] :
+                         (mux_reg[ 9]==SIG_UART1_RX) ? gpi_sync[ 9] :
+                         (mux_reg[10]==SIG_UART1_RX) ? gpi_sync[10] :
+                         (mux_reg[11]==SIG_UART1_RX) ? gpi_sync[11] :
+                         (mux_reg[12]==SIG_UART1_RX) ? gpi_sync[12] :
+                         (mux_reg[13]==SIG_UART1_RX) ? gpi_sync[13] :
+                         (mux_reg[14]==SIG_UART1_RX) ? gpi_sync[14] :
+                         (mux_reg[15]==SIG_UART1_RX) ? gpi_sync[15] : 1'b1;
+
+    assign spi0_miso_o = (mux_reg[ 0]==SIG_SPI0_MISO) ? gpi_sync[ 0] :
+                         (mux_reg[ 1]==SIG_SPI0_MISO) ? gpi_sync[ 1] :
+                         (mux_reg[ 2]==SIG_SPI0_MISO) ? gpi_sync[ 2] :
+                         (mux_reg[ 3]==SIG_SPI0_MISO) ? gpi_sync[ 3] :
+                         (mux_reg[ 4]==SIG_SPI0_MISO) ? gpi_sync[ 4] :
+                         (mux_reg[ 5]==SIG_SPI0_MISO) ? gpi_sync[ 5] :
+                         (mux_reg[ 6]==SIG_SPI0_MISO) ? gpi_sync[ 6] :
+                         (mux_reg[ 7]==SIG_SPI0_MISO) ? gpi_sync[ 7] :
+                         (mux_reg[ 8]==SIG_SPI0_MISO) ? gpi_sync[ 8] :
+                         (mux_reg[ 9]==SIG_SPI0_MISO) ? gpi_sync[ 9] :
+                         (mux_reg[10]==SIG_SPI0_MISO) ? gpi_sync[10] :
+                         (mux_reg[11]==SIG_SPI0_MISO) ? gpi_sync[11] :
+                         (mux_reg[12]==SIG_SPI0_MISO) ? gpi_sync[12] :
+                         (mux_reg[13]==SIG_SPI0_MISO) ? gpi_sync[13] :
+                         (mux_reg[14]==SIG_SPI0_MISO) ? gpi_sync[14] :
+                         (mux_reg[15]==SIG_SPI0_MISO) ? gpi_sync[15] : 1'b1;
+
+    assign spi1_miso_o = (mux_reg[ 0]==SIG_SPI1_MISO) ? gpi_sync[ 0] :
+                         (mux_reg[ 1]==SIG_SPI1_MISO) ? gpi_sync[ 1] :
+                         (mux_reg[ 2]==SIG_SPI1_MISO) ? gpi_sync[ 2] :
+                         (mux_reg[ 3]==SIG_SPI1_MISO) ? gpi_sync[ 3] :
+                         (mux_reg[ 4]==SIG_SPI1_MISO) ? gpi_sync[ 4] :
+                         (mux_reg[ 5]==SIG_SPI1_MISO) ? gpi_sync[ 5] :
+                         (mux_reg[ 6]==SIG_SPI1_MISO) ? gpi_sync[ 6] :
+                         (mux_reg[ 7]==SIG_SPI1_MISO) ? gpi_sync[ 7] :
+                         (mux_reg[ 8]==SIG_SPI1_MISO) ? gpi_sync[ 8] :
+                         (mux_reg[ 9]==SIG_SPI1_MISO) ? gpi_sync[ 9] :
+                         (mux_reg[10]==SIG_SPI1_MISO) ? gpi_sync[10] :
+                         (mux_reg[11]==SIG_SPI1_MISO) ? gpi_sync[11] :
+                         (mux_reg[12]==SIG_SPI1_MISO) ? gpi_sync[12] :
+                         (mux_reg[13]==SIG_SPI1_MISO) ? gpi_sync[13] :
+                         (mux_reg[14]==SIG_SPI1_MISO) ? gpi_sync[14] :
+                         (mux_reg[15]==SIG_SPI1_MISO) ? gpi_sync[15] : 1'b1;
+
+    assign can0_rx_o   = (mux_reg[ 0]==SIG_CAN0_RX) ? gpi_sync[ 0] :
+                         (mux_reg[ 1]==SIG_CAN0_RX) ? gpi_sync[ 1] :
+                         (mux_reg[ 2]==SIG_CAN0_RX) ? gpi_sync[ 2] :
+                         (mux_reg[ 3]==SIG_CAN0_RX) ? gpi_sync[ 3] :
+                         (mux_reg[ 4]==SIG_CAN0_RX) ? gpi_sync[ 4] :
+                         (mux_reg[ 5]==SIG_CAN0_RX) ? gpi_sync[ 5] :
+                         (mux_reg[ 6]==SIG_CAN0_RX) ? gpi_sync[ 6] :
+                         (mux_reg[ 7]==SIG_CAN0_RX) ? gpi_sync[ 7] :
+                         (mux_reg[ 8]==SIG_CAN0_RX) ? gpi_sync[ 8] :
+                         (mux_reg[ 9]==SIG_CAN0_RX) ? gpi_sync[ 9] :
+                         (mux_reg[10]==SIG_CAN0_RX) ? gpi_sync[10] :
+                         (mux_reg[11]==SIG_CAN0_RX) ? gpi_sync[11] :
+                         (mux_reg[12]==SIG_CAN0_RX) ? gpi_sync[12] :
+                         (mux_reg[13]==SIG_CAN0_RX) ? gpi_sync[13] :
+                         (mux_reg[14]==SIG_CAN0_RX) ? gpi_sync[14] :
+                         (mux_reg[15]==SIG_CAN0_RX) ? gpi_sync[15] : 1'b1;
 
     // I2C open-drain: drive low when peripheral pulls low, else Hi-Z
     assign i2c0_scl_io = 1'bz; // actual drive controlled by I2C peripheral
@@ -324,37 +383,54 @@ module iomux_axi #(
     assign i2c1_sda_io = 1'bz;
 
     // ── Per-pad output MUX ────────────────────────────────────────────────────
-    integer n;
-    always @(*) begin
+    // IMPORTANT: always @(*) does NOT track unpacked reg arrays (mux_reg[])
+    // in Verilog-2001.  We must list every signal explicitly so the block
+    // re-evaluates whenever firmware updates a mux_reg entry OR any
+    // peripheral signal changes.
+    always @(
+        // mux_reg elements — must be listed individually
+        mux_reg[ 0], mux_reg[ 1], mux_reg[ 2], mux_reg[ 3],
+        mux_reg[ 4], mux_reg[ 5], mux_reg[ 6], mux_reg[ 7],
+        mux_reg[ 8], mux_reg[ 9], mux_reg[10], mux_reg[11],
+        mux_reg[12], mux_reg[13], mux_reg[14], mux_reg[15],
+        // peripheral output signals
+        uart0_tx_i, uart1_tx_i,
+        spi0_sck_i, spi0_mosi_i, spi0_cs0_i, spi0_cs1_i,
+        spi1_sck_i, spi1_mosi_i, spi1_cs0_i,
+        pwm_ch0_i, pwm_ch1_i, pwm_ch2_i, pwm_ch3_i,
+        can0_tx_i,
+        gpo_data
+    ) begin : pad_mux
+        integer n;
         for (n = 0; n < GPIO_COUNT; n = n + 1) begin
             case (mux_reg[n])
-                SIG_HIZ:      begin pad_out[n] = 1'b0; pad_oe[n] = 1'b0; end
-                SIG_UART0_TX: begin pad_out[n] = uart0_tx_i; pad_oe[n] = 1'b1; end
-                SIG_UART0_RX: begin pad_out[n] = 1'b0;       pad_oe[n] = 1'b0; end // input
-                SIG_UART1_TX: begin pad_out[n] = uart1_tx_i; pad_oe[n] = 1'b1; end
-                SIG_UART1_RX: begin pad_out[n] = 1'b0;       pad_oe[n] = 1'b0; end
-                SIG_SPI0_SCK: begin pad_out[n] = spi0_sck_i; pad_oe[n] = 1'b1; end
-                SIG_SPI0_MOSI:begin pad_out[n] = spi0_mosi_i;pad_oe[n] = 1'b1; end
-                SIG_SPI0_MISO:begin pad_out[n] = 1'b0;       pad_oe[n] = 1'b0; end
-                SIG_SPI0_CS0: begin pad_out[n] = spi0_cs0_i; pad_oe[n] = 1'b1; end
-                SIG_SPI0_CS1: begin pad_out[n] = spi0_cs1_i; pad_oe[n] = 1'b1; end
-                SIG_SPI1_SCK: begin pad_out[n] = spi1_sck_i; pad_oe[n] = 1'b1; end
-                SIG_SPI1_MOSI:begin pad_out[n] = spi1_mosi_i;pad_oe[n] = 1'b1; end
-                SIG_SPI1_MISO:begin pad_out[n] = 1'b0;       pad_oe[n] = 1'b0; end
-                SIG_SPI1_CS0: begin pad_out[n] = spi1_cs0_i; pad_oe[n] = 1'b1; end
-                SIG_I2C0_SCL: begin pad_out[n] = i2c0_scl_io;pad_oe[n] = ~i2c0_scl_io; end
-                SIG_I2C0_SDA: begin pad_out[n] = i2c0_sda_io;pad_oe[n] = ~i2c0_sda_io; end
-                SIG_I2C1_SCL: begin pad_out[n] = i2c1_scl_io;pad_oe[n] = ~i2c1_scl_io; end
-                SIG_I2C1_SDA: begin pad_out[n] = i2c1_sda_io;pad_oe[n] = ~i2c1_sda_io; end
-                SIG_PWM_CH0:  begin pad_out[n] = pwm_ch0_i;  pad_oe[n] = 1'b1; end
-                SIG_PWM_CH1:  begin pad_out[n] = pwm_ch1_i;  pad_oe[n] = 1'b1; end
-                SIG_PWM_CH2:  begin pad_out[n] = pwm_ch2_i;  pad_oe[n] = 1'b1; end
-                SIG_PWM_CH3:  begin pad_out[n] = pwm_ch3_i;  pad_oe[n] = 1'b1; end
-                SIG_CAN0_TX:  begin pad_out[n] = can0_tx_i;  pad_oe[n] = 1'b1; end
-                SIG_CAN0_RX:  begin pad_out[n] = 1'b0;       pad_oe[n] = 1'b0; end
-                SIG_GPIO_OUT: begin pad_out[n] = gpo_data[n]; pad_oe[n] = 1'b1; end
-                SIG_GPIO_IN:  begin pad_out[n] = 1'b0;        pad_oe[n] = 1'b0; end
-                default:      begin pad_out[n] = 1'b0;        pad_oe[n] = 1'b0; end
+                SIG_HIZ:      begin pad_out[n] = 1'b0;        pad_oe[n] = 1'b0; end
+                SIG_UART0_TX: begin pad_out[n] = uart0_tx_i;  pad_oe[n] = 1'b1; end
+                SIG_UART0_RX: begin pad_out[n] = 1'b0;        pad_oe[n] = 1'b0; end
+                SIG_UART1_TX: begin pad_out[n] = uart1_tx_i;  pad_oe[n] = 1'b1; end
+                SIG_UART1_RX: begin pad_out[n] = 1'b0;        pad_oe[n] = 1'b0; end
+                SIG_SPI0_SCK: begin pad_out[n] = spi0_sck_i;  pad_oe[n] = 1'b1; end
+                SIG_SPI0_MOSI:begin pad_out[n] = spi0_mosi_i; pad_oe[n] = 1'b1; end
+                SIG_SPI0_MISO:begin pad_out[n] = 1'b0;        pad_oe[n] = 1'b0; end
+                SIG_SPI0_CS0: begin pad_out[n] = spi0_cs0_i;  pad_oe[n] = 1'b1; end
+                SIG_SPI0_CS1: begin pad_out[n] = spi0_cs1_i;  pad_oe[n] = 1'b1; end
+                SIG_SPI1_SCK: begin pad_out[n] = spi1_sck_i;  pad_oe[n] = 1'b1; end
+                SIG_SPI1_MOSI:begin pad_out[n] = spi1_mosi_i; pad_oe[n] = 1'b1; end
+                SIG_SPI1_MISO:begin pad_out[n] = 1'b0;        pad_oe[n] = 1'b0; end
+                SIG_SPI1_CS0: begin pad_out[n] = spi1_cs0_i;  pad_oe[n] = 1'b1; end
+                SIG_I2C0_SCL: begin pad_out[n] = i2c0_scl_io; pad_oe[n] = ~i2c0_scl_io; end
+                SIG_I2C0_SDA: begin pad_out[n] = i2c0_sda_io; pad_oe[n] = ~i2c0_sda_io; end
+                SIG_I2C1_SCL: begin pad_out[n] = i2c1_scl_io; pad_oe[n] = ~i2c1_scl_io; end
+                SIG_I2C1_SDA: begin pad_out[n] = i2c1_sda_io; pad_oe[n] = ~i2c1_sda_io; end
+                SIG_PWM_CH0:  begin pad_out[n] = pwm_ch0_i;   pad_oe[n] = 1'b1; end
+                SIG_PWM_CH1:  begin pad_out[n] = pwm_ch1_i;   pad_oe[n] = 1'b1; end
+                SIG_PWM_CH2:  begin pad_out[n] = pwm_ch2_i;   pad_oe[n] = 1'b1; end
+                SIG_PWM_CH3:  begin pad_out[n] = pwm_ch3_i;   pad_oe[n] = 1'b1; end
+                SIG_CAN0_TX:  begin pad_out[n] = can0_tx_i;   pad_oe[n] = 1'b1; end
+                SIG_CAN0_RX:  begin pad_out[n] = 1'b0;        pad_oe[n] = 1'b0; end
+                SIG_GPIO_OUT: begin pad_out[n] = gpo_data[n];  pad_oe[n] = 1'b1; end
+                SIG_GPIO_IN:  begin pad_out[n] = 1'b0;         pad_oe[n] = 1'b0; end
+                default:      begin pad_out[n] = 1'b0;         pad_oe[n] = 1'b0; end
             endcase
         end
     end

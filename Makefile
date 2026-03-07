@@ -22,12 +22,12 @@ CC      = riscv32-unknown-elf-gcc
 OBJCOPY = riscv32-unknown-elf-objcopy
 OBJDUMP = riscv32-unknown-elf-objdump
 CFLAGS  = -march=rv32i -mabi=ilp32 -nostdlib -O1 -Wall
-SRCS     = ./firmware/soc/crt0.S ./firmware/soc/main.c
+SRCS     = ./firmware/soc/crt0.S ./firmware/soc/iomux.c
 LDSCRIPT = ./firmware/soc/link.ld
 ELF      = ./firmware/soc/firmware.elf
 HEX_RAW  = ./firmware/soc/firmware_raw.hex   # objcopy byte-addressed output
 HEX      = ./firmware/soc/firmware.hex        # word-addressed for $readmemh
-CORE     = ./rtl/core/picorv32.v ./rtl/soc/axi_interconnect.v  ./rtl/soc/pwm_timer_axi.v  ./rtl/soc/uart_axi.v
+CORE     = ./rtl/core/picorv32.v ./rtl/soc/axi_interconnect.v  ./rtl/soc/pwm_timer_axi.v  ./rtl/soc/uart_axi.v ./rtl/soc/iomux_axi.v ./rtl/soc/tn619_top.v
 VTB      = ./tb/tb_soc.v        # thin Verilog shim for Verilator
 SIMDIR   = ./simulation
 SIMBIN   = simv                  # compiled simulation binary
